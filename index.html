@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>我的电子相册</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- 顶部标题 -->
+        <header class="header">
+            <h1>📸 我的电子相册</h1>
+            <p class="subtitle">左右滑动或点击翻页</p>
+        </header>
+
+        <!-- 翻页相册主体 -->
+        <div class="flipbook-wrapper">
+            <div class="flipbook" id="flipbook">
+                <!-- 第1页 -->
+                <div class="page">
+                    <div class="page-content">
+                        <img src="https://picsum.photos/600/400?random=1" alt="照片1" class="photo">
+                        <div class="caption">🌅 美好时光 - 第1页</div>
+                    </div>
+                </div>
+
+                <!-- 第2页 -->
+                <div class="page">
+                    <div class="page-content">
+                        <img src="https://picsum.photos/600/400?random=2" alt="照片2" class="photo">
+                        <div class="caption">🎨 美好时光 - 第2页</div>
+                    </div>
+                </div>
+
+                <!-- 第3页 -->
+                <div class="page">
+                    <div class="page-content">
+                        <img src="https://picsum.photos/600/400?random=3" alt="照片3" class="photo">
+                        <div class="caption">🌺 美好时光 - 第3页</div>
+                    </div>
+                </div>
+
+                <!-- 第4页 -->
+                <div class="page">
+                    <div class="page-content">
+                        <img src="https://picsum.photos/600/400?random=4" alt="照片4" class="photo">
+                        <div class="caption">🏔️ 美好时光 - 第4页</div>
+                    </div>
+                </div>
+
+                <!-- 第5页 -->
+                <div class="page">
+                    <div class="page-content">
+                        <img src="https://picsum.photos/600/400?random=5" alt="照片5" class="photo">
+                        <div class="caption">🌊 美好时光 - 第5页</div>
+                    </div>
+                </div>
+
+                <!-- 第6页 -->
+                <div class="page">
+                    <div class="page-content">
+                        <img src="https://picsum.photos/600/400?random=6" alt="照片6" class="photo">
+                        <div class="caption">🌟 美好时光 - 第6页</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 左右翻页按钮 -->
+            <button class="nav-btn prev-btn" id="prevBtn">‹</button>
+            <button class="nav-btn next-btn" id="nextBtn">›</button>
+        </div>
+
+        <!-- 底部控制栏 -->
+        <div class="controls">
+            <div class="page-indicator">
+                <span id="currentPage">1</span> / <span id="totalPages">6</span>
+            </div>
+            <div class="control-buttons">
+                <button class="control-btn" id="fullscreenBtn">🔍 全屏</button>
+                <button class="control-btn" id="autoPlayBtn">▶️ 自动播放</button>
+            </div>
+        </div>
+
+        <!-- 缩略图导航 -->
+        <div class="thumbnails" id="thumbnails">
+            <!-- JavaScript 动态生成 -->
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
