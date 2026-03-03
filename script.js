@@ -5,9 +5,12 @@ class FlipBook {
         this.currentPage = 0;
         this.totalPages = 6;
         this.isAnimating = false;
+        this.animationDuration = 650;
         this.autoPlayInterval = null;
         this.touchStartX = 0;
         this.touchEndX = 0;
+        this.audioContext = null;
+        this.audioUnlocked = false;
 
         this.init();
     }
@@ -38,6 +41,8 @@ class FlipBook {
     }
 
     bindEvents() {
+        this.setupAudioUnlock();
+
         // 点击翻页按钮
         this.prevBtn.addEventListener('click', () => this.prevPage());
         this.nextBtn.addEventListener('click', () => this.nextPage());
@@ -76,6 +81,74 @@ class FlipBook {
 
         // 自动播放按钮
         this.autoPlayBtn.addEventListener('click', () => this.toggleAutoPlay());
+    }
+
+    setupAudioUnlock() {
+        const unlockOnce = () => this.unlockAudio();
+        window.addEventListener('pointerdown', unlockOnce, { once: true });
+        window.addEventListener('touchstart', unlockOnce, { once: true, passive: true });
+        window.addEventListener('keydown', unlockOnce, { once: true });
+    }
+
+    unlockAudio() {
+        if (this.audioUnlocked) return;
+
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass) return;
+
+        if (!this.audioContext) {
+            this.audioContext = new AudioContextClass();
+        }
+
+        if (this.audioContext.state === 'suspended') {
+            this.audioContext.resume().catch(() => {});
+        }
+
+        this.audioUnlocked = true;
+    }
+
+    playFlipSound(direction = 'forward') {
+        if (!this.audioUnlocked || !this.audioContext) return;
+        if (this.audioContext.state === 'suspended') {
+            this.audioContext.resume().then(() => this.playFlipSound(direction)).catch(() => {});
+            return;
+        }
+
+        const now = this.audioContext.currentTime;
+        const oscillator = this.audioContext.createOscillator();
+        const filter = this.audioContext.createBiquadFilter();
+        const gainNode = this.audioContext.createGain();
+
+        oscillator.type = 'triangle';
+        oscillator.frequency.setValueAtTime(direction === 'forward' ? 680 : 560, now);
+        oscillator.frequency.exponentialRampToValueAtTime(direction === 'forward' ? 240 : 210, now + 0.11);
+
+        filter.type = 'bandpass';
+        filter.frequency.value = direction === 'forward' ? 900 : 760;
+        filter.Q.value = 0.8;
+
+        gainNode.gain.setValueAtTime(0.0001, now);
+        gainNode.gain.exponentialRampToValueAtTime(0.08, now + 0.015);
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.14);
+
+        oscillator.connect(filter);
+        filter.connect(gainNode);
+        gainNode.connect(this.audioContext.destination);
+
+        oscillator.start(now);
+        oscillator.stop(now + 0.15);
+    }
+
+    markFlipAnimation(pageIndex, direction) {
+        const page = this.pages[pageIndex];
+        if (!page) return;
+
+        const animationClass = direction === 'forward' ? 'flipping-forward' : 'flipping-backward';
+        page.classList.add(animationClass);
+
+        setTimeout(() => {
+            page.classList.remove(animationClass);
+        }, this.animationDuration);
     }
 
     handleSwipe() {
@@ -125,37 +198,47 @@ class FlipBook {
     nextPage() {
         if (this.isAnimating || this.currentPage >= this.totalPages - 1) return;
 
+        const fromPageIndex = this.currentPage;
         this.isAnimating = true;
         this.currentPage++;
+        this.markFlipAnimation(fromPageIndex, 'forward');
         this.updatePages();
+        this.playFlipSound('forward');
 
         setTimeout(() => {
             this.isAnimating = false;
-        }, 600);
+        }, this.animationDuration);
     }
 
     prevPage() {
         if (this.isAnimating || this.currentPage <= 0) return;
 
+        const toPageIndex = this.currentPage - 1;
         this.isAnimating = true;
         this.currentPage--;
+        this.markFlipAnimation(toPageIndex, 'backward');
         this.updatePages();
+        this.playFlipSound('backward');
 
         setTimeout(() => {
             this.isAnimating = false;
-        }, 600);
+        }, this.animationDuration);
     }
 
     goToPage(pageIndex) {
         if (this.isAnimating || pageIndex === this.currentPage) return;
 
+        const direction = pageIndex > this.currentPage ? 'forward' : 'backward';
+        const animationPageIndex = direction === 'forward' ? this.currentPage : pageIndex;
         this.isAnimating = true;
         this.currentPage = pageIndex;
+        this.markFlipAnimation(animationPageIndex, direction);
         this.updatePages();
+        this.playFlipSound(direction);
 
         setTimeout(() => {
             this.isAnimating = false;
-        }, 600);
+        }, this.animationDuration);
     }
 
     generateThumbnails() {
