@@ -7,11 +7,18 @@ class FlipBook {
         this.isAnimating = false;
         this.animationDuration = 760;
         this.autoPlayInterval = null;
-        this.touchStartX = 0;
-        this.touchEndX = 0;
         this.audioContext = null;
         this.audioUnlocked = false;
         this.noiseBufferCache = null;
+        this.isDragging = false;
+        this.dragDirection = null;
+        this.dragPageIndex = -1;
+        this.dragPageEl = null;
+        this.dragStartX = 0;
+        this.dragProgress = 0;
+        this.dragPointerId = null;
+        this.dragRect = null;
+        this.suppressClickUntil = 0;
 
         this.init();
     }
@@ -56,18 +63,20 @@ class FlipBook {
             if (e.key === 'ArrowRight') this.nextPage();
         });
 
-        // 触摸滑动
-        this.flipbookEl.addEventListener('touchstart', (e) => {
-            this.touchStartX = e.changedTouches[0].screenX;
-        });
-
-        this.flipbookEl.addEventListener('touchend', (e) => {
-            this.touchEndX = e.changedTouches[0].screenX;
-            this.handleSwipe();
-        });
+        // 拖拽书页翻页（鼠标 + 触摸）
+        this.flipbookEl.addEventListener('pointerdown', (e) => this.handlePointerDown(e));
+        this.flipbookEl.addEventListener('pointermove', (e) => this.handlePointerMove(e));
+        this.flipbookEl.addEventListener('pointerup', (e) => this.handlePointerUp(e));
+        this.flipbookEl.addEventListener('pointercancel', (e) => this.handlePointerCancel(e));
+        this.flipbookEl.addEventListener('lostpointercapture', (e) => this.handlePointerCancel(e));
 
         // 点击页面翻页
         this.flipbookEl.addEventListener('click', (e) => {
+            if (Date.now() < this.suppressClickUntil || this.isDragging) {
+                e.preventDefault();
+                return;
+            }
+
             const rect = this.flipbookEl.getBoundingClientRect();
             const clickX = e.clientX - rect.left;
 
@@ -83,6 +92,164 @@ class FlipBook {
 
         // 自动播放按钮
         this.autoPlayBtn.addEventListener('click', () => this.toggleAutoPlay());
+    }
+
+    handlePointerDown(e) {
+        if (this.isAnimating || this.isDragging) return;
+        if (e.pointerType === 'mouse' && e.button !== 0) return;
+
+        const rect = this.flipbookEl.getBoundingClientRect();
+        const localX = e.clientX - rect.left;
+        const edgeZone = Math.min(140, rect.width * 0.22);
+
+        let direction = null;
+        let pageIndex = -1;
+
+        if (localX > rect.width - edgeZone && this.currentPage < this.totalPages - 1) {
+            direction = 'forward';
+            pageIndex = this.currentPage;
+        } else if (localX < edgeZone && this.currentPage > 0) {
+            direction = 'backward';
+            pageIndex = this.currentPage - 1;
+        }
+
+        if (!direction) return;
+
+        this.startDragFlip(direction, pageIndex, e.pointerId, localX, rect);
+        try {
+            this.flipbookEl.setPointerCapture(e.pointerId);
+        } catch (_) {}
+        e.preventDefault();
+    }
+
+    handlePointerMove(e) {
+        if (!this.isDragging || e.pointerId !== this.dragPointerId) return;
+
+        const localX = this.clamp(e.clientX - this.dragRect.left, 0, this.dragRect.width);
+        const deltaX = localX - this.dragStartX;
+        const dragDistance = this.dragRect.width * 0.72;
+
+        const progress = this.dragDirection === 'forward'
+            ? this.clamp(-deltaX / dragDistance, 0, 1)
+            : this.clamp(deltaX / dragDistance, 0, 1);
+
+        this.dragProgress = progress;
+        this.applyDragFlip(progress);
+        e.preventDefault();
+    }
+
+    handlePointerUp(e) {
+        if (!this.isDragging || e.pointerId !== this.dragPointerId) return;
+        this.finishDragFlip();
+        e.preventDefault();
+    }
+
+    handlePointerCancel(e) {
+        if (!this.isDragging) return;
+        if (typeof e.pointerId === 'number' && e.pointerId !== this.dragPointerId) return;
+        this.finishDragFlip(true);
+    }
+
+    startDragFlip(direction, pageIndex, pointerId, startX, rect) {
+        const page = this.pages[pageIndex];
+        if (!page) return;
+
+        this.isDragging = true;
+        this.dragDirection = direction;
+        this.dragPageIndex = pageIndex;
+        this.dragPageEl = page;
+        this.dragStartX = startX;
+        this.dragProgress = direction === 'forward' ? 0 : 1;
+        this.dragPointerId = pointerId;
+        this.dragRect = rect;
+
+        this.flipbookEl.classList.add('is-dragging', direction === 'forward' ? 'drag-forward' : 'drag-backward');
+        page.classList.add('is-dragging-page');
+        page.style.transition = 'none';
+        page.style.zIndex = '8';
+        this.applyDragFlip(this.dragProgress);
+    }
+
+    applyDragFlip(progress) {
+        if (!this.dragPageEl) return;
+
+        const angle = this.dragDirection === 'forward'
+            ? -180 * progress
+            : -180 + 180 * progress;
+
+        const translateX = this.dragDirection === 'forward'
+            ? -8 * progress
+            : -8 + 8 * progress;
+
+        this.dragPageEl.style.transform = `rotateY(${angle}deg) translateX(${translateX}px)`;
+        this.dragPageEl.style.setProperty('--drag-progress', progress.toFixed(3));
+        this.flipbookEl.style.setProperty('--drag-progress', progress.toFixed(3));
+    }
+
+    finishDragFlip(forceCancel = false) {
+        if (!this.isDragging || !this.dragPageEl) return;
+
+        const direction = this.dragDirection;
+        const page = this.dragPageEl;
+        const shouldTurn = !forceCancel && this.dragProgress > 0.34;
+        const commitDuration = 320;
+
+        this.isDragging = false;
+        this.isAnimating = true;
+        this.suppressClickUntil = Date.now() + 220;
+
+        page.style.transition = `transform ${commitDuration}ms cubic-bezier(0.22, 0.61, 0.36, 1)`;
+        page.classList.remove('is-dragging-page');
+        this.flipbookEl.classList.remove('is-dragging', 'drag-forward', 'drag-backward');
+
+        const targetAngle = shouldTurn
+            ? (direction === 'forward' ? -180 : 0)
+            : (direction === 'forward' ? 0 : -180);
+        const targetX = shouldTurn
+            ? (direction === 'forward' ? -8 : 0)
+            : (direction === 'forward' ? 0 : -8);
+
+        requestAnimationFrame(() => {
+            page.style.transform = `rotateY(${targetAngle}deg) translateX(${targetX}px)`;
+            page.style.setProperty('--drag-progress', shouldTurn ? '1' : '0');
+            this.flipbookEl.style.setProperty('--drag-progress', shouldTurn ? '1' : '0');
+        });
+
+        setTimeout(() => {
+            if (shouldTurn) {
+                this.currentPage += direction === 'forward' ? 1 : -1;
+                this.markBookAnimation(direction);
+                this.playFlipSound(direction);
+            }
+
+            this.clearDragStyles();
+            this.updatePages();
+            this.isAnimating = false;
+        }, commitDuration + 20);
+    }
+
+    clearDragStyles() {
+        if (this.dragPageEl) {
+            this.dragPageEl.classList.remove('is-dragging-page');
+            this.dragPageEl.style.removeProperty('transition');
+            this.dragPageEl.style.removeProperty('transform');
+            this.dragPageEl.style.removeProperty('z-index');
+            this.dragPageEl.style.removeProperty('--drag-progress');
+        }
+
+        this.flipbookEl.classList.remove('is-dragging', 'drag-forward', 'drag-backward');
+        this.flipbookEl.style.removeProperty('--drag-progress');
+        this.dragDirection = null;
+        this.dragPageIndex = -1;
+        this.dragPageEl = null;
+        this.dragStartX = 0;
+        this.dragProgress = 0;
+        this.dragPointerId = null;
+        this.dragRect = null;
+    }
+
+    clamp(value, min, max) {
+        return Math.min(max, Math.max(min, value));
     }
 
     setupAudioUnlock() {
@@ -209,21 +376,6 @@ class FlipBook {
         }, this.animationDuration);
     }
 
-    handleSwipe() {
-        const swipeThreshold = 50;
-        const diff = this.touchStartX - this.touchEndX;
-
-        if (Math.abs(diff) > swipeThreshold) {
-            if (diff > 0) {
-                // 向左滑动，下一页
-                this.nextPage();
-            } else {
-                // 向右滑动，上一页
-                this.prevPage();
-            }
-        }
-    }
-
     updatePages() {
         this.pages.forEach((page, index) => {
             page.classList.remove('active', 'flipped', 'next');
@@ -254,7 +406,7 @@ class FlipBook {
     }
 
     nextPage() {
-        if (this.isAnimating || this.currentPage >= this.totalPages - 1) return;
+        if (this.isAnimating || this.isDragging || this.currentPage >= this.totalPages - 1) return;
 
         const fromPageIndex = this.currentPage;
         this.isAnimating = true;
@@ -270,7 +422,7 @@ class FlipBook {
     }
 
     prevPage() {
-        if (this.isAnimating || this.currentPage <= 0) return;
+        if (this.isAnimating || this.isDragging || this.currentPage <= 0) return;
 
         const toPageIndex = this.currentPage - 1;
         this.isAnimating = true;
@@ -286,7 +438,7 @@ class FlipBook {
     }
 
     goToPage(pageIndex) {
-        if (this.isAnimating || pageIndex === this.currentPage) return;
+        if (this.isAnimating || this.isDragging || pageIndex === this.currentPage) return;
 
         const direction = pageIndex > this.currentPage ? 'forward' : 'backward';
         const animationPageIndex = direction === 'forward' ? this.currentPage : pageIndex;

@@ -40,10 +40,12 @@ body {
     position: relative;
     max-width: 800px;
     margin: 0 auto 30px;
-    perspective: 2000px;
+    perspective: 2600px;
+    perspective-origin: 50% 50%;
 }
 
 .flipbook {
+    --drag-progress: 0;
     position: relative;
     width: 100%;
     height: 600px;
@@ -52,6 +54,8 @@ body {
     box-shadow: 0 20px 60px rgba(0,0,0,0.3);
     overflow: hidden;
     transform-style: preserve-3d;
+    touch-action: none;
+    user-select: none;
 }
 
 .flipbook::before {
@@ -66,6 +70,16 @@ body {
     z-index: 6;
 }
 
+.flipbook::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, rgba(0, 0, 0, 0.20) 0%, rgba(0, 0, 0, 0.08) 12%, rgba(0, 0, 0, 0.02) 22%, rgba(0, 0, 0, 0) 40%);
+    opacity: calc(0.22 + var(--drag-progress) * 0.28);
+    pointer-events: none;
+    z-index: 4;
+}
+
 .flipbook.is-flipping-forward {
     animation: book-rock-forward 0.76s cubic-bezier(0.35, 0.03, 0.22, 1);
 }
@@ -74,8 +88,13 @@ body {
     animation: book-rock-backward 0.76s cubic-bezier(0.35, 0.03, 0.22, 1);
 }
 
+.flipbook.is-dragging {
+    cursor: grabbing;
+}
+
 /* 页面样式 */
 .page {
+    --drag-progress: 0;
     position: absolute;
     width: 100%;
     height: 100%;
@@ -85,6 +104,18 @@ body {
     transform-style: preserve-3d;
     backface-visibility: hidden;
     will-change: transform;
+}
+
+.page::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 24px;
+    height: 100%;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.32) 100%);
+    opacity: 0.2;
+    pointer-events: none;
 }
 
 .page::after {
@@ -130,6 +161,16 @@ body {
     animation: page-turn-backward 0.76s cubic-bezier(0.25, 0.1, 0.2, 1) both;
 }
 
+.page.is-dragging-page {
+    z-index: 8 !important;
+    box-shadow: 0 26px 56px rgba(0, 0, 0, 0.34);
+    pointer-events: none;
+}
+
+.page.is-dragging-page::after {
+    opacity: calc(0.16 + var(--drag-progress) * 0.78);
+}
+
 .page-content {
     width: 100%;
     height: 100%;
@@ -138,6 +179,8 @@ body {
     align-items: center;
     justify-content: center;
     padding: 40px;
+    backface-visibility: hidden;
+    transform: translateZ(0);
 }
 
 .photo {
