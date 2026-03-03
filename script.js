@@ -5,12 +5,13 @@ class FlipBook {
         this.currentPage = 0;
         this.totalPages = 6;
         this.isAnimating = false;
-        this.animationDuration = 650;
+        this.animationDuration = 760;
         this.autoPlayInterval = null;
         this.touchStartX = 0;
         this.touchEndX = 0;
         this.audioContext = null;
         this.audioUnlocked = false;
+        this.noiseBufferCache = null;
 
         this.init();
     }
@@ -25,6 +26,8 @@ class FlipBook {
         this.currentPageEl = document.getElementById('currentPage');
         this.totalPagesEl = document.getElementById('totalPages');
         this.thumbnailsContainer = document.getElementById('thumbnails');
+        this.flipbookEl = document.getElementById('flipbook');
+        this.flipAudioEl = document.getElementById('flipSound');
 
         // 设置总页数
         this.totalPages = this.pages.length;
@@ -54,19 +57,18 @@ class FlipBook {
         });
 
         // 触摸滑动
-        const flipbook = document.getElementById('flipbook');
-        flipbook.addEventListener('touchstart', (e) => {
+        this.flipbookEl.addEventListener('touchstart', (e) => {
             this.touchStartX = e.changedTouches[0].screenX;
         });
 
-        flipbook.addEventListener('touchend', (e) => {
+        this.flipbookEl.addEventListener('touchend', (e) => {
             this.touchEndX = e.changedTouches[0].screenX;
             this.handleSwipe();
         });
 
         // 点击页面翻页
-        flipbook.addEventListener('click', (e) => {
-            const rect = flipbook.getBoundingClientRect();
+        this.flipbookEl.addEventListener('click', (e) => {
+            const rect = this.flipbookEl.getBoundingClientRect();
             const clickX = e.clientX - rect.left;
 
             if (clickX < rect.width / 2) {
@@ -108,6 +110,7 @@ class FlipBook {
     }
 
     playFlipSound(direction = 'forward') {
+        if (this.playRecordedFlipSound(direction)) return;
         if (!this.audioUnlocked || !this.audioContext) return;
         if (this.audioContext.state === 'suspended') {
             this.audioContext.resume().then(() => this.playFlipSound(direction)).catch(() => {});
@@ -115,28 +118,83 @@ class FlipBook {
         }
 
         const now = this.audioContext.currentTime;
-        const oscillator = this.audioContext.createOscillator();
-        const filter = this.audioContext.createBiquadFilter();
+        const source = this.audioContext.createBufferSource();
+        source.buffer = this.getNoiseBuffer();
+
+        const highpass = this.audioContext.createBiquadFilter();
+        highpass.type = 'highpass';
+        highpass.frequency.value = direction === 'forward' ? 360 : 300;
+
+        const lowpass = this.audioContext.createBiquadFilter();
+        lowpass.type = 'lowpass';
+        lowpass.frequency.value = direction === 'forward' ? 2700 : 2400;
+
         const gainNode = this.audioContext.createGain();
-
-        oscillator.type = 'triangle';
-        oscillator.frequency.setValueAtTime(direction === 'forward' ? 680 : 560, now);
-        oscillator.frequency.exponentialRampToValueAtTime(direction === 'forward' ? 240 : 210, now + 0.11);
-
-        filter.type = 'bandpass';
-        filter.frequency.value = direction === 'forward' ? 900 : 760;
-        filter.Q.value = 0.8;
-
         gainNode.gain.setValueAtTime(0.0001, now);
-        gainNode.gain.exponentialRampToValueAtTime(0.08, now + 0.015);
-        gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.14);
+        gainNode.gain.exponentialRampToValueAtTime(direction === 'forward' ? 0.34 : 0.28, now + 0.02);
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.24);
 
-        oscillator.connect(filter);
-        filter.connect(gainNode);
+        const flutter = this.audioContext.createOscillator();
+        const flutterGain = this.audioContext.createGain();
+        flutter.type = 'triangle';
+        flutter.frequency.setValueAtTime(direction === 'forward' ? 85 : 70, now);
+        flutter.frequency.exponentialRampToValueAtTime(direction === 'forward' ? 42 : 35, now + 0.2);
+        flutterGain.gain.setValueAtTime(0.0001, now);
+        flutterGain.gain.exponentialRampToValueAtTime(0.018, now + 0.03);
+        flutterGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+
+        source.connect(highpass);
+        highpass.connect(lowpass);
+        lowpass.connect(gainNode);
         gainNode.connect(this.audioContext.destination);
 
-        oscillator.start(now);
-        oscillator.stop(now + 0.15);
+        flutter.connect(flutterGain);
+        flutterGain.connect(this.audioContext.destination);
+
+        source.start(now);
+        source.stop(now + 0.25);
+        flutter.start(now);
+        flutter.stop(now + 0.23);
+    }
+
+    getNoiseBuffer() {
+        if (this.noiseBufferCache) return this.noiseBufferCache;
+
+        const length = Math.floor(this.audioContext.sampleRate * 0.26);
+        const buffer = this.audioContext.createBuffer(1, length, this.audioContext.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < length; i++) {
+            const decay = 1 - i / length;
+            data[i] = (Math.random() * 2 - 1) * Math.pow(decay, 0.6);
+        }
+        this.noiseBufferCache = buffer;
+        return buffer;
+    }
+
+    playRecordedFlipSound(direction = 'forward') {
+        if (!this.flipAudioEl) return false;
+        const src = this.flipAudioEl.getAttribute('src');
+        if (!src) return false;
+        if (this.flipAudioEl.readyState < 2) return false;
+
+        const audio = this.flipAudioEl.cloneNode(true);
+        audio.volume = direction === 'forward' ? 0.9 : 0.8;
+        audio.play().catch(() => {});
+        return true;
+    }
+
+    markBookAnimation(direction) {
+        if (!this.flipbookEl) return;
+
+        const forwardClass = 'is-flipping-forward';
+        const backwardClass = 'is-flipping-backward';
+        this.flipbookEl.classList.remove(forwardClass, backwardClass);
+        void this.flipbookEl.offsetWidth;
+        this.flipbookEl.classList.add(direction === 'forward' ? forwardClass : backwardClass);
+
+        setTimeout(() => {
+            this.flipbookEl.classList.remove(forwardClass, backwardClass);
+        }, this.animationDuration);
     }
 
     markFlipAnimation(pageIndex, direction) {
@@ -201,6 +259,7 @@ class FlipBook {
         const fromPageIndex = this.currentPage;
         this.isAnimating = true;
         this.currentPage++;
+        this.markBookAnimation('forward');
         this.markFlipAnimation(fromPageIndex, 'forward');
         this.updatePages();
         this.playFlipSound('forward');
@@ -216,6 +275,7 @@ class FlipBook {
         const toPageIndex = this.currentPage - 1;
         this.isAnimating = true;
         this.currentPage--;
+        this.markBookAnimation('backward');
         this.markFlipAnimation(toPageIndex, 'backward');
         this.updatePages();
         this.playFlipSound('backward');
@@ -232,6 +292,7 @@ class FlipBook {
         const animationPageIndex = direction === 'forward' ? this.currentPage : pageIndex;
         this.isAnimating = true;
         this.currentPage = pageIndex;
+        this.markBookAnimation(direction);
         this.markFlipAnimation(animationPageIndex, direction);
         this.updatePages();
         this.playFlipSound(direction);
