@@ -5,7 +5,7 @@ class FlipBook {
         this.currentPage = 0;
         this.totalPages = 6;
         this.isAnimating = false;
-        this.animationDuration = 760;
+        this.animationDuration = 920;
         this.autoPlayInterval = null;
         this.audioContext = null;
         this.audioUnlocked = false;
@@ -18,6 +18,7 @@ class FlipBook {
         this.dragProgress = 0;
         this.dragPointerId = null;
         this.dragRect = null;
+        this.dragDistance = 0;
         this.suppressClickUntil = 0;
 
         this.init();
@@ -100,7 +101,8 @@ class FlipBook {
 
         const rect = this.flipbookEl.getBoundingClientRect();
         const localX = e.clientX - rect.left;
-        const edgeZone = Math.min(140, rect.width * 0.22);
+        const isMobile = window.matchMedia('(max-width: 768px)').matches;
+        const edgeZone = isMobile ? rect.width * 0.42 : Math.min(160, rect.width * 0.24);
 
         let direction = null;
         let pageIndex = -1;
@@ -127,11 +129,9 @@ class FlipBook {
 
         const localX = this.clamp(e.clientX - this.dragRect.left, 0, this.dragRect.width);
         const deltaX = localX - this.dragStartX;
-        const dragDistance = this.dragRect.width * 0.72;
-
         const progress = this.dragDirection === 'forward'
-            ? this.clamp(-deltaX / dragDistance, 0, 1)
-            : this.clamp(deltaX / dragDistance, 0, 1);
+            ? this.clamp(-deltaX / this.dragDistance, 0, 1)
+            : this.clamp(deltaX / this.dragDistance, 0, 1);
 
         this.dragProgress = progress;
         this.applyDragFlip(progress);
@@ -162,6 +162,7 @@ class FlipBook {
         this.dragProgress = direction === 'forward' ? 0 : 1;
         this.dragPointerId = pointerId;
         this.dragRect = rect;
+        this.dragDistance = rect.width * (window.matchMedia('(max-width: 768px)').matches ? 0.62 : 0.72);
 
         this.flipbookEl.classList.add('is-dragging', direction === 'forward' ? 'drag-forward' : 'drag-backward');
         page.classList.add('is-dragging-page');
@@ -178,10 +179,15 @@ class FlipBook {
             : -180 + 180 * progress;
 
         const translateX = this.dragDirection === 'forward'
-            ? -8 * progress
-            : -8 + 8 * progress;
+            ? -12 * progress
+            : -12 + 12 * progress;
 
-        this.dragPageEl.style.transform = `rotateY(${angle}deg) translateX(${translateX}px)`;
+        const arc = Math.sin(Math.PI * progress);
+        const rotateZ = (this.dragDirection === 'forward' ? -1 : 1) * arc * 8.5;
+        const skewY = (this.dragDirection === 'forward' ? -1 : 1) * arc * 3.2;
+        const liftZ = arc * 8;
+
+        this.dragPageEl.style.transform = `translateZ(${liftZ}px) rotateY(${angle}deg) translateX(${translateX}px) rotateZ(${rotateZ}deg) skewY(${skewY}deg)`;
         this.dragPageEl.style.setProperty('--drag-progress', progress.toFixed(3));
         this.flipbookEl.style.setProperty('--drag-progress', progress.toFixed(3));
     }
@@ -191,8 +197,8 @@ class FlipBook {
 
         const direction = this.dragDirection;
         const page = this.dragPageEl;
-        const shouldTurn = !forceCancel && this.dragProgress > 0.34;
-        const commitDuration = 320;
+        const shouldTurn = !forceCancel && this.dragProgress > (window.matchMedia('(max-width: 768px)').matches ? 0.24 : 0.32);
+        const commitDuration = 420;
 
         this.isDragging = false;
         this.isAnimating = true;
@@ -206,11 +212,11 @@ class FlipBook {
             ? (direction === 'forward' ? -180 : 0)
             : (direction === 'forward' ? 0 : -180);
         const targetX = shouldTurn
-            ? (direction === 'forward' ? -8 : 0)
-            : (direction === 'forward' ? 0 : -8);
+            ? (direction === 'forward' ? -12 : 0)
+            : (direction === 'forward' ? 0 : -12);
 
         requestAnimationFrame(() => {
-            page.style.transform = `rotateY(${targetAngle}deg) translateX(${targetX}px)`;
+            page.style.transform = `translateZ(0) rotateY(${targetAngle}deg) translateX(${targetX}px) rotateZ(0deg) skewY(0deg)`;
             page.style.setProperty('--drag-progress', shouldTurn ? '1' : '0');
             this.flipbookEl.style.setProperty('--drag-progress', shouldTurn ? '1' : '0');
         });
@@ -246,6 +252,7 @@ class FlipBook {
         this.dragProgress = 0;
         this.dragPointerId = null;
         this.dragRect = null;
+        this.dragDistance = 0;
     }
 
     clamp(value, min, max) {
